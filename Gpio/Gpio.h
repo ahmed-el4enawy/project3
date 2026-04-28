@@ -1,0 +1,19 @@
+#ifndef GPIO_H
+#define GPIO_H
+
+#include "Std_Types.h"
+
+#define GPIOA_BASE 0x40020000UL
+#define GPIOB_BASE 0x40020400UL
+#define GPIOC_BASE 0x40020800UL
+
+#define GPIO_MODE_INPUT  0U
+#define GPIO_MODE_OUTPUT 1U
+#define GPIO_MODE_AF     2U
+#define GPIO_MODE_ANALOG 3U
+
+void Gpio_SetMode(uint32 port_base, uint8 pin, uint8 mode);
+void Gpio_SetAF(uint32 port_base, uint8 pin, uint8 af);
+void Gpio_WritePin(uint32 port_base, uint8 pin, uint8 val);
+
+#endif /* GPIO_H */

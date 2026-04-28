@@ -15,16 +15,31 @@ endif ()
 
 set(SOURCE_LIST ${SOURCE_LIST} ${SRC_FILES}
         ${PROJECT_PATH}/STM32-base-STM32Cube/CMSIS/${SERIES_FOLDER}/src/system_${SERIES_FOLDER}.c)
+
+# --- Updated to reflect Component-Based Architecture ---
 set(PROJECT_SOURCES
-    src/main.c
-    src/rcc.c
-    src/gpio.c
-    src/adc.c
-    src/pwm.c
-    src/lcd.c
-    src/fsm.c
-    src/syscalls.c
+        src/main.c
+        src/syscalls.c
+        Rcc/Rcc.c
+        Gpio/Gpio.c
+        SysTick/SysTick.c
+        Timer/Timer.c
+        Dma/Dma.c
+        Adc/Adc.c
+        Lcd/Lcd.c
+        Led/Led.c
+        Fsm/Fsm.c
 )
+
 set(PROJECT_INCLUDES
-    include
+        Lib
+        Rcc
+        Gpio
+        SysTick
+        Timer
+        Dma
+        Adc
+        Lcd
+        Led
+        Fsm
 )

@@ -3,7 +3,7 @@ set(CMAKE_SYSTEM_NAME Generic)
 set(CMAKE_SYSTEM_PROCESSOR arm)
 set(CMAKE_TRY_COMPILE_TARGET_TYPE STATIC_LIBRARY)
 
-set(ARM_DIR  "put your arm folder path here")
+set(ARM_DIR "E:/arm")
 set(ARM_TOOLCHAIN_DIR ${ARM_DIR}/bin)
 
 if(MINGW OR CYGWIN OR WIN32)
