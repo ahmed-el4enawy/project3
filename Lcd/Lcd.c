@@ -2,35 +2,29 @@
 #include "Gpio.h"
 #include "Rcc.h"
 #include "SysTick.h"
-
-/* * LCD1602 in 4-bit mode on GPIOB:
- * PB0=RS, PB1=EN, PB2=D4, PB3=D5, PB4=D6, PB5=D7
- */
-#define LCD_PORT_BASE  GPIOB_BASE
-#define LCD_RS         0
-#define LCD_EN         1
-#define LCD_D4         2
+#include "App_Config.h"
 
 static void Lcd_EnablePulse(void)
 {
-    Gpio_WritePin(LCD_PORT_BASE, LCD_EN, 1);
-    SysTick_Delay_us(2); /* Exact hardware 2us delay */
-    Gpio_WritePin(LCD_PORT_BASE, LCD_EN, 0);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_EN_PIN, 1);
+    SysTick_Delay_us(2);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_EN_PIN, 0);
     SysTick_Delay_us(50);
 }
 
 static void Lcd_SendNibble(uint8 nibble)
 {
-    Gpio_WritePin(LCD_PORT_BASE, LCD_D4 + 0, (nibble >> 0) & 1U);
-    Gpio_WritePin(LCD_PORT_BASE, LCD_D4 + 1, (nibble >> 1) & 1U);
-    Gpio_WritePin(LCD_PORT_BASE, LCD_D4 + 2, (nibble >> 2) & 1U);
-    Gpio_WritePin(LCD_PORT_BASE, LCD_D4 + 3, (nibble >> 3) & 1U);
+    
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_D4_PIN + 0, (nibble >> 0) & 1U);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_D4_PIN + 1, (nibble >> 1) & 1U);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_D4_PIN + 2, (nibble >> 2) & 1U);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_D4_PIN + 3, (nibble >> 3) & 1U);
     Lcd_EnablePulse();
 }
 
 static void Lcd_Cmd(uint8 cmd)
 {
-    Gpio_WritePin(LCD_PORT_BASE, LCD_RS, 0);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_RS_PIN, 0);
     Lcd_SendNibble(cmd >> 4);
     Lcd_SendNibble(cmd & 0x0F);
     SysTick_Delay_ms(2);
@@ -38,7 +32,7 @@ static void Lcd_Cmd(uint8 cmd)
 
 static void Lcd_Data(uint8 data)
 {
-    Gpio_WritePin(LCD_PORT_BASE, LCD_RS, 1);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_RS_PIN, 1);
     Lcd_SendNibble(data >> 4);
     Lcd_SendNibble(data & 0x0F);
     SysTick_Delay_us(50);
@@ -48,25 +42,28 @@ void Lcd_Init(void)
 {
     Rcc_EnableGPIOB();
 
-    for (uint8 i = 0; i <= 5; i++) {
-        Gpio_SetMode(LCD_PORT_BASE, i, GPIO_MODE_OUTPUT);
+
+    Gpio_SetMode(CONFIG_LCD_PORT, CONFIG_LCD_RS_PIN, GPIO_MODE_OUTPUT);
+    Gpio_SetMode(CONFIG_LCD_PORT, CONFIG_LCD_EN_PIN, GPIO_MODE_OUTPUT);
+    for (uint8 i = 0; i < 4; i++) {
+        Gpio_SetMode(CONFIG_LCD_PORT, CONFIG_LCD_D4_PIN + i, GPIO_MODE_OUTPUT);
     }
 
-    SysTick_Delay_ms(50); /* Power-on hardware delay */
+    SysTick_Delay_ms(50);
 
-    Gpio_WritePin(LCD_PORT_BASE, LCD_RS, 0);
+    Gpio_WritePin(CONFIG_LCD_PORT, CONFIG_LCD_RS_PIN, 0);
     Lcd_SendNibble(0x03);
     SysTick_Delay_ms(5);
     Lcd_SendNibble(0x03);
     SysTick_Delay_us(150);
     Lcd_SendNibble(0x03);
     SysTick_Delay_us(150);
-    Lcd_SendNibble(0x02); /* Switch to 4-bit mode */
+    Lcd_SendNibble(0x02);
     SysTick_Delay_us(150);
 
-    Lcd_Cmd(0x28); /* 4-bit mode, 2 lines, 5x8 font */
-    Lcd_Cmd(0x0C); /* Display ON, Cursor OFF */
-    Lcd_Cmd(0x06); /* Entry mode: increment cursor */
+    Lcd_Cmd(0x28);
+    Lcd_Cmd(0x0C);
+    Lcd_Cmd(0x06);
     Lcd_Clear();
 }
 

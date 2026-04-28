@@ -21,7 +21,8 @@ set(STARTUP_BASE_DIR                     ${PROJECT_PATH}/STM32-base/startup/)
 set(EXECUTABLE                           ${CMAKE_PROJECT_NAME})
 
 # Executable files (Automatically pulls our modular .c files via SOURCE_LIST)
-add_executable(${EXECUTABLE} ${SOURCE_LIST} ${STARTUP_BASE_DIR}/${SERIES_FOLDER}/${MAPPED_DEVICE}.s)
+add_executable(${EXECUTABLE} ${SOURCE_LIST} ${STARTUP_BASE_DIR}/${SERIES_FOLDER}/${MAPPED_DEVICE}.s
+        Lib/App_Config.h)
 
 # Include (Automatically pulls our modular .h folders via INCLUDE_LIST)
 target_include_directories(${EXECUTABLE} PUBLIC ${INCLUDE_LIST})
