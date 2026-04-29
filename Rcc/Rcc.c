@@ -14,9 +14,9 @@ void Rcc_EnableTIM3(void) {
 }
 
 void Rcc_EnableADC1(void) {
-    RCC->APB2ENR |= (1UL << 8); /* Enable ADC1 Clock (This was missing!) */
+    RCC->APB2ENR |= (1UL << 8);
 }
 
 void Rcc_EnableDMA2(void) {
-    RCC->AHB1ENR |= (1UL << 22); /* Enable DMA2 Clock (This was missing!) */
+    RCC->AHB1ENR |= (1UL << 22);
 }

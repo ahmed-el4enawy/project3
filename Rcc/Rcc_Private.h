@@ -3,7 +3,7 @@
 
 #include "Std_Types.h"
 
-#define RCC_BASE_ADDR    0x40023800UL
+#define RCC_BASE_ADDR 0x40023800UL
 
 typedef struct {
     volatile uint32 CR;

@@ -2,29 +2,27 @@
 #include "Gpio_Private.h"
 
 void Gpio_SetMode(uint32 port_base, uint8 pin, uint8 mode) {
-    GpioType *Port = (GpioType *)port_base;
-    Port->MODER &= ~(3UL << (pin * 2U));
-    Port->MODER |=  ((uint32)mode << (pin * 2U));
+    GpioType *port = (GpioType *)port_base;
+    port->MODER &= ~((uint32)(3UL << (pin * 2)));
+    port->MODER |= ((uint32)mode << (pin * 2));
 }
 
 void Gpio_SetAF(uint32 port_base, uint8 pin, uint8 af) {
-    GpioType *Port = (GpioType *)port_base;
-    if (pin < 8U) {
-        Port->AFRL &= ~(0xFUL << (pin * 4U));
-        Port->AFRL |=  ((uint32)af << (pin * 4U));
+    GpioType *port = (GpioType *)port_base;
+    if (pin < 8) {
+        port->AFRL &= ~((uint32)(0x0FUL << (pin * 4)));
+        port->AFRL |= ((uint32)af << (pin * 4));
     } else {
-        uint8 pos = (pin - 8U) * 4U;
-        Port->AFRH &= ~(0xFUL << pos);
-        Port->AFRH |=  ((uint32)af << pos);
+        port->AFRH &= ~((uint32)(0x0FUL << ((pin - 8) * 4)));
+        port->AFRH |= ((uint32)af << ((pin - 8) * 4));
     }
 }
 
 void Gpio_WritePin(uint32 port_base, uint8 pin, uint8 val) {
-    GpioType *Port = (GpioType *)port_base;
-    /* Atomic Pin Write using BSRR */
+    GpioType *port = (GpioType *)port_base;
     if (val) {
-        Port->BSRR = (1UL << pin);
+        port->BSRR = (1UL << pin);
     } else {
-        Port->BSRR = (1UL << (pin + 16U));
+        port->BSRR = (1UL << (pin + 16));
     }
 }

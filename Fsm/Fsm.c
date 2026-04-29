@@ -13,14 +13,12 @@ static uint8 GetDutyCycle(uint16 temp) {
     return 100;
 }
 
-
 static void UpdateDisplay(uint16 temp, uint8 duty, uint8 is_overheat) {
     char buffer[16];
     uint8 int_part = temp / 10U;
     uint8 frac_part = temp % 10U;
 
     Lcd_Clear();
-
 
     Lcd_SetCursor(0, 0);
     buffer[0] = 'T'; buffer[1] = 'e'; buffer[2] = 'm'; buffer[3] = 'p'; buffer[4] = ':'; buffer[5] = ' ';
@@ -30,7 +28,6 @@ static void UpdateDisplay(uint16 temp, uint8 duty, uint8 is_overheat) {
     buffer[9] = frac_part + '0';
     buffer[10] = ' '; buffer[11] = 'C'; buffer[12] = '\0';
     Lcd_Print(buffer);
-
 
     Lcd_SetCursor(1, 0);
     if (is_overheat) {
