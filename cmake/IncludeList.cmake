@@ -7,8 +7,6 @@ set(INCLUDE_LIST ${INCLUDE_LIST}
         ${PROJECT_PATH}/Lib
         ${PROJECT_PATH}/RCC
         ${PROJECT_PATH}/Gpio
-        ${PROJECT_PATH}/SevenSeg
-        ${PROJECT_PATH}/Exti
         ${PROJECT_PATH}/Timer
         ${PROJECT_PATH}/Pwm
         ${PROJECT_PATH}/Nvic

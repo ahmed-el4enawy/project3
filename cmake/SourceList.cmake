@@ -1,9 +1,9 @@
-file(GLOB_RECURSE SRC_FILES  ${PROJECT_PATH}/*.c)
+file(GLOB_RECURSE SRC_FILES CONFIGURE_DEPENDS "${PROJECT_PATH}/*.c")
 
 if (NOT USE_HAL)
-    list(FILTER SRC_FILES EXCLUDE REGEX ".*/(.*(build|STM32-base).*)/.*")
+    list(FILTER SRC_FILES EXCLUDE REGEX ".*/(cmake-build|build|HAL|CMakeFiles)/.*")
 else ()
-    list(FILTER SRC_FILES EXCLUDE REGEX ".*/(.*(build).*)|STM32-base/.*")
+    list(FILTER SRC_FILES EXCLUDE REGEX ".*/(cmake-build|build|CMakeFiles)/.*")
     set(EXCLUDED_FILES
             "${PROJECT_PATH}/STM32-base-STM32Cube/HAL/${SERIES_FOLDER}/src/stm32f4xx_ll_utils.c"
             "${PROJECT_PATH}/STM32-base-STM32Cube/HAL/${SERIES_FOLDER}/src/stm32f4xx_ll_usb.c"
@@ -93,5 +93,5 @@ else ()
     list(REMOVE_ITEM SRC_FILES ${EXCLUDED_FILES})
 endif ()
 
-set(SOURCE_LIST ${SOURCE_LIST} ${SRC_FILES}
-        ${PROJECT_PATH}/STM32-base-STM32Cube/CMSIS/${SERIES_FOLDER}/src/system_${SERIES_FOLDER}.c)
+set(SOURCE_LIST ${SRC_FILES}
+        "${PROJECT_PATH}/STM32-base-STM32Cube/CMSIS/${SERIES_FOLDER}/src/system_${SERIES_FOLDER}.c")

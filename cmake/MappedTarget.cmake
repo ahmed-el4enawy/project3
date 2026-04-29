@@ -1,4 +1,3 @@
-# Determine the SERIES_FOLDER based on the DEVICE
 if(DEVICE MATCHES "STM32F0")
     set(SERIES_FOLDER "STM32F0xx")
 elseif(DEVICE MATCHES "STM32F1")
@@ -14,9 +13,6 @@ elseif(DEVICE MATCHES "STM32F7")
 else()
     message(FATAL_ERROR "Unsupported device: ${DEVICE}")
 endif()
-
-
-
 
 if(DEVICE STREQUAL "STM32F401xB")
     set(MAPPED_DEVICE "STM32F401xC")
