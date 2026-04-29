@@ -3,6 +3,9 @@
 
 #include "Std_Types.h"
 
+#define GPIOA_BASE 0x40020000UL
+#define GPIOB_BASE 0x40020400UL
+
 #define GPIO_MODE_INPUT     0
 #define GPIO_MODE_OUTPUT    1
 #define GPIO_MODE_AF        2

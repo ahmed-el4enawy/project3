@@ -3,8 +3,6 @@
 
 #include "Std_Types.h"
 
-#define TIM3_BASE_ADDR 0x40000400UL
-
 typedef struct {
     volatile uint32 CR1;
     volatile uint32 CR2;

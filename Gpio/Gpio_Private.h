@@ -3,9 +3,6 @@
 
 #include "Std_Types.h"
 
-#define GPIOA_BASE 0x40020000UL
-#define GPIOB_BASE 0x40020400UL
-
 typedef struct {
     volatile uint32 MODER;
     volatile uint32 OTYPER;
