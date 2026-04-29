@@ -10,30 +10,7 @@
 #define LCD_H
 
 #include "Std_Types.h"
-
-/* =========================================================
- * Hardware Connection Mapping (GPIOB)
- * ========================================================= */
- 
-// Control Pins
-#define LCD_RS_PORT     GPIO_B
-#define LCD_RS_PIN      (0U)    // Register Select: 0 for Instruction, 1 for Data
-
-#define LCD_EN_PORT     GPIO_B
-#define LCD_EN_PIN      (1U)    // Enable: Latches data on falling edge
-
-// Data Bus (4-bit Mode)
-#define LCD_D4_PORT     GPIO_B
-#define LCD_D4_PIN      (4U)    
-
-#define LCD_D5_PORT     GPIO_B
-#define LCD_D5_PIN      (5U)    
-
-#define LCD_D6_PORT     GPIO_B
-#define LCD_D6_PIN      (6U)    
-
-#define LCD_D7_PORT     GPIO_B
-#define LCD_D7_PIN      (7U)    
+#include "App_Config.h" // <--- Pulls in the pin mappings
 
 /* =========================================================
  * LCD Controller Command Set (HD44780)
