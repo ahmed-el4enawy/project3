@@ -21,8 +21,7 @@ set(STARTUP_BASE_DIR                     ${PROJECT_PATH}/STM32-base/startup/)
 set(EXECUTABLE                           ${CMAKE_PROJECT_NAME})
 
 # Executable files (Automatically pulls our modular .c files via SOURCE_LIST)
-add_executable(${EXECUTABLE} ${SOURCE_LIST} ${STARTUP_BASE_DIR}/${SERIES_FOLDER}/${MAPPED_DEVICE}.s
-        Lib/App_Config.h)
+add_executable(${EXECUTABLE} ${SOURCE_LIST} ${STARTUP_BASE_DIR}/${SERIES_FOLDER}/${MAPPED_DEVICE}.s)
 
 # Include (Automatically pulls our modular .h folders via INCLUDE_LIST)
 target_include_directories(${EXECUTABLE} PUBLIC ${INCLUDE_LIST})
@@ -43,11 +42,11 @@ target_link_options(${EXECUTABLE} PRIVATE
         ${CPU_PARAMETERS}
         -L${LINKER_SCRIPTS_BASE_DIR}
         -T${LINKER_SCRIPTS_BASE_DIR}/${SERIES_FOLDER}/${DEVICE}.ld
-        #        -nostartfiles
+        # -nostartfiles
         -Xlinker --gc-sections
         -Wl,-Map=${CMAKE_PROJECT_NAME}.map
         --specs=nano.specs
-        #-u _printf_float                # STDIO float formatting support
+        #-u _printf_float   # STDIO float formatting support
 )
 
 # Execute post-build to print size

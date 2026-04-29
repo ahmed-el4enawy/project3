@@ -1,17 +1,13 @@
 /**
  * @file    App.c
- * @brief   Auto-Cooler Mealy State Machine implementation.
- *          Outputs depend on both current state AND current temperature event.
- *          Implemented as switch-case dispatch table -- no flat if-else chains.
- *
- *  ADC driver : AbdallahDarwish interrupt-based driver (Adc.h).
- *               Adc_ReadSingleChannelAsync() used -- no busy-wait in App layer.
- *               Temperature conversion (moved from Adc driver) lives here.
- *
- *  Alarm LED  : PD12 (Active HIGH)
- *  Fan PWM    : TIMER3 / PWM_CHANNEL_1 on PA6 (AF2), 10 kHz
- *  LCD        : 16x2 LCD1602 in 4-bit mode (see Lcd.h)
- *
+ * @brief   Core Application layer and Mealy FSM logic for the Auto-Cooler.
+ * @author  Team 27 (Ahmed Salah Geoshy Elshenawy & Ahmed Ahmed Mokhtar)
+ * @details
+ * - ADC Integration: Uses asynchronous, non-blocking interrupts.
+ * - FSM Design: Function-pointer dispatch table to eliminate nested conditionals.
+ * - Fan Control: TIM3 CH1 PWM on PA6 (AF2) @ 10 kHz.
+ * - Alarm System: PD14 (Active HIGH).
+ * - Display: 16x2 LCD configured in 4-bit mode.
  */
 
 #include "App.h"
@@ -23,173 +19,154 @@
 #include "Timer.h"
 
 /* =========================================================
- * Hardware resource constants
+ * Hardware Mapping & Configuration Constants
  * ========================================================= */
 
-/** Alarm LED: PD14 (Red LED on STM32F407 Discovery), active HIGH.
- *  Discovery board LED map: PD12=Green, PD13=Orange, PD14=Red, PD15=Blue. */
+// Alarm LED: Configured for PD14
 #define APP_ALARM_LED_PORT      GPIO_D
 #define APP_ALARM_LED_PIN       (14U)
 
-/** Fan PWM: TIM3 CH1, PA6, AF2 */
+// Fan Control: TIM3_CH1 on PA6
 #define APP_FAN_TIMER_ID        TIMER3
 #define APP_FAN_CHANNEL         PWM_CHANNEL_1
 #define APP_FAN_GPIO_PORT       GPIO_A
 #define APP_FAN_GPIO_PIN        (6U)
-#define APP_FAN_PSC             (15U)   /**< PSC+1=16, 16 MHz / 16 = 1 MHz tick */
-#define APP_FAN_ARR             (99U)   /**< ARR+1=100 → 1 MHz / 100 = 10 kHz   */
+#define APP_FAN_PSC             (15U)   // 16 MHz / 16 = 1 MHz timer tick
+#define APP_FAN_ARR             (99U)   // 1 MHz / 100 = 10 kHz PWM frequency
 
-/** Fan duty cycle levels (percent) */
+// Pre-defined PWM Duty Cycles
 #define APP_FAN_DUTY_OFF        (0U)
 #define APP_FAN_DUTY_LOW        (33U)
 #define APP_FAN_DUTY_MED        (66U)
 #define APP_FAN_DUTY_FULL       (100U)
 
-/** Temperature thresholds in tenths of degree C */
-#define APP_THRESH_25_X10       (250)   /**< 25.0 C x 10 */
-#define APP_THRESH_30_X10       (300)   /**< 30.0 C x 10 */
-#define APP_THRESH_35_X10       (350)   /**< 35.0 C x 10 */
-#define APP_THRESH_40_X10       (400)   /**< 40.0 C x 10 */
+// Operational Temperature Thresholds (Celsius * 10)
+#define APP_THRESH_25_X10       (250)
+#define APP_THRESH_30_X10       (300)
+#define APP_THRESH_35_X10       (350)
+#define APP_THRESH_40_X10       (400)
 
-/** ADC conversion constants (LM35: 10 mV/C, Vref=3.3V, 12-bit=4096 steps)
- *  A ×15 multiplier is applied after the voltage conversion so that the
- *  simulation reading scales up to a more useful display range. */
-#define APP_ADC_VREF_MV         (3300UL)  /**< Reference voltage in mV        */
-#define APP_ADC_RESOLUTION      (4096UL)  /**< 12-bit ADC full scale           */
-#define APP_ADC_TEMP_MULTIPLIER (6UL)    /**< Scale factor applied to reading */
+// ADC Calibration & Scaling
+#define APP_ADC_VREF_MV         (3300UL) // System VREF is 3.3V
+#define APP_ADC_RESOLUTION      (4096UL) // 12-bit depth
+#define APP_ADC_TEMP_MULTIPLIER (6UL)    // Simulation scaling factor
 
 /* =========================================================
- * Private async-ADC state  (set from ISR, consumed in App_Run)
+ * Asynchronous ADC State variables
  * ========================================================= */
 
-/** Raw ADC sample stored by the ADC ISR callback.  volatile because it is
- *  written from interrupt context and read from the main loop. */
-static volatile uint16 App_AdcLastRaw  = 0U;
-
-/** Set to 1 by the ADC callback when a new sample is available. */
-static volatile uint8  App_AdcReady    = 0U;
+// Volatile flags updated directly by the ADC Interrupt Service Routine
+static volatile uint16 Adc_LatestRawSample = 0U;
+static volatile uint8  Adc_NewDataAvailable = 0U;
 
 /* =========================================================
- * Private state variable
+ * FSM State Tracking
  * ========================================================= */
-static AppState_t currentState = APP_STATE_IDLE;
+static AppState_t ActiveState = APP_STATE_IDLE;
 
 /* =========================================================
- * Private function prototypes
+ * Private Prototypes & Dispatch Table
  * ========================================================= */
-static void       App_AdcCallback(uint16 rawResult);   /* ADC ISR callback     */
+static void       App_AdcCallback(uint16 rawResult);
 static sint32     App_RawToTempCelsius_x10(uint16 rawValue);
-static AppEvent_t App_ClassifyTemperature(sint32 temp_x10);
-static void       App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 temp_x10);
-static void       App_HandleIdle(AppEvent_t event, sint32 temp_x10);
-static void       App_HandleCooling(AppEvent_t event, sint32 temp_x10);
-static void       App_HandleOverheat(AppEvent_t event, sint32 temp_x10);
+static AppEvent_t App_ClassifyTemperature(sint32 currentTempX10);
+static void       App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 currentTempX10);
+static void       App_HandleIdle(AppEvent_t event, sint32 currentTempX10);
+static void       App_HandleCooling(AppEvent_t event, sint32 currentTempX10);
+static void       App_HandleOverheat(AppEvent_t event, sint32 currentTempX10);
 
-/* Handler function-pointer table indexed by AppState_t */
-typedef void (*AppStateHandler_t)(AppEvent_t event, sint32 temp_x10);
+// Function pointer array mapped to AppState_t enumeration
+typedef void (*FsmHandler_t)(AppEvent_t event, sint32 currentTempX10);
 
-static const AppStateHandler_t App_StateTable[3] =
+static const FsmHandler_t FsmDispatchTable[3] =
 {
-    App_HandleIdle,     /* APP_STATE_IDLE     = 0 */
-    App_HandleCooling,  /* APP_STATE_COOLING  = 1 */
-    App_HandleOverheat  /* APP_STATE_OVERHEAT = 2 */
+    App_HandleIdle,     // 0: APP_STATE_IDLE
+    App_HandleCooling,  // 1: APP_STATE_COOLING
+    App_HandleOverheat  // 2: APP_STATE_OVERHEAT
 };
 
 /* =========================================================
- * Public API
+ * Core Application Interface
  * ========================================================= */
 
 /**
- * @brief  Initialise fan PWM and alarm LED; set state to IDLE, fan OFF.
+ * @brief Bootstraps the application, configures peripherals, and launches the first ADC read.
  */
 void App_Init(void)
 {
-    /* --- Alarm LED: PD12 as push-pull output, initially LOW (OFF) --- */
+    // Initialize Alarm LED (Starts OFF)
     Gpio_Init(APP_ALARM_LED_PORT, APP_ALARM_LED_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
     Gpio_WritePin(APP_ALARM_LED_PORT, APP_ALARM_LED_PIN, LOW);
 
-    /* --- Fan GPIO: PA6 as alternate function AF2 (TIM3_CH1) --- */
+    // Initialize Fan PWM GPIO pin
     Gpio_Init(APP_FAN_GPIO_PORT, APP_FAN_GPIO_PIN, GPIO_AF, GPIO_PUSH_PULL);
     Gpio_SetAF(APP_FAN_GPIO_PORT, APP_FAN_GPIO_PIN, GPIO_AF2);
 
-    /* --- PWM: TIM3 CH1 @ 10 kHz, start with 0% duty (fan OFF) --- */
+    // Initialize Timer 3 for Fan PWM at 0% Duty Cycle
     Pwm_Init(APP_FAN_TIMER_ID, APP_FAN_CHANNEL, APP_FAN_PSC, APP_FAN_ARR);
     Pwm_SetDutyPercent(APP_FAN_TIMER_ID, APP_FAN_CHANNEL, APP_FAN_DUTY_OFF);
     Pwm_Start(APP_FAN_TIMER_ID, APP_FAN_CHANNEL);
 
-    /* Initial state */
-    currentState = APP_STATE_IDLE;
+    // Reset FSM
+    ActiveState = APP_STATE_IDLE;
 
-    /* Display initial splash -- clear any garbage on LCD */
+    // Render initial UI to clear display artifacts
     Lcd_Clear();
     Lcd_SetCursor(0U, 0U);
     Lcd_Print("Temp:  --.- C   ");
     Lcd_SetCursor(1U, 0U);
     Lcd_Print("Fan:    0%      ");
 
-    /* ---- Arm async ADC: register callback, fire first conversion ----
-     * Adc_ReadSingleChannelAsync enables EOCIE + NVIC so the ADC ISR
-     * (ADC_IRQHandler in Adc.c) will call App_AdcCallback when done.
-     * The callback stores the result and re-arms the next conversion,
-     * ensuring no busy-wait ever blocks the main loop.
-     */
+    // Register our callback and trigger the initial background conversion
     Adc_ReadSingleChannelAsync(App_AdcCallback);
-    Adc_StartConversion();   /* kick off the very first sample */
+    Adc_StartConversion();
 }
 
 /**
- * @brief  Check for a new ADC sample and, if available, run the state machine.
- *         Returns immediately (non-blocking) when no new data is ready.
- *         Requirement 4 compliant: no busy-wait in application code.
+ * @brief Main execution routine. Evaluates new sensor data continuously without blocking.
  */
 void App_Run(void)
 {
-    uint16     rawValue;
-    sint32     temp_x10;
-    AppEvent_t event;
+    uint16     adcRawRead;
+    sint32     currentTempX10;
+    AppEvent_t currentEvent;
 
-    /* No new sample yet -- return without blocking */
-    if (App_AdcReady == 0U)
+    // Yield control immediately if no fresh ADC data is present
+    if (Adc_NewDataAvailable == 0U)
     {
         return;
     }
 
-    /* Atomically snapshot and clear the ready flag */
-    App_AdcReady = 0U;
-    rawValue     = App_AdcLastRaw;
+    // Capture the data and reset the ISR flag safely
+    Adc_NewDataAvailable = 0U;
+    adcRawRead           = Adc_LatestRawSample;
 
-    /* Arm the next conversion immediately so the ADC ISR fires again */
+    // Immediately trigger the next hardware conversion
     Adc_StartConversion();
 
-    /* Convert raw 12-bit value to tenths of a degree */
-    temp_x10 = App_RawToTempCelsius_x10(rawValue);
-    event    = App_ClassifyTemperature(temp_x10);
+    // Process the reading and categorize the event
+    currentTempX10 = App_RawToTempCelsius_x10(adcRawRead);
+    currentEvent   = App_ClassifyTemperature(currentTempX10);
 
-    /* Dispatch to state handler via function-pointer table */
-    App_StateTable[currentState](event, temp_x10);
+    // Trigger the appropriate state handler
+    FsmDispatchTable[ActiveState](currentEvent, currentTempX10);
 }
 
 /* =========================================================
- * Private helpers
+ * Internal Routines
  * ========================================================= */
 
 /**
- * @brief  ADC ISR callback -- called from ADC_IRQHandler in Adc.c.
- *         Stores the raw result and sets the ready flag consumed by App_Run.
- *         MUST be kept short; no LCD or NVIC calls here.
- * @param  rawResult  12-bit ADC raw value delivered by the ISR.
+ * @brief Interrupt callback executed by the ADC driver when conversion completes.
  */
 static void App_AdcCallback(uint16 rawResult)
 {
-    App_AdcLastRaw = rawResult;
-    App_AdcReady   = 1U;
+    Adc_LatestRawSample  = rawResult;
+    Adc_NewDataAvailable = 1U;
 }
 
 /**
- * @brief  Convert a raw 12-bit ADC reading to temperature in tenths of degree C.
- *         Formula: Temp_x10 = (rawValue * Vref_mV * 15) / 4096
- *         LM35: 10 mV/C => Voltage_mV = Temp x 10, then scaled by x15.
- *         Overflow check: 4095 * 3300 * 15 = 202,702,500 < sint32 max (~2.1B).
+ * @brief Transforms 12-bit ADC data into a scaled Celsius value.
  */
 static sint32 App_RawToTempCelsius_x10(uint16 rawValue)
 {
@@ -198,31 +175,30 @@ static sint32 App_RawToTempCelsius_x10(uint16 rawValue)
 }
 
 /**
- * @brief  Map a temperature reading to one of the defined FSM events.
- *         Uses the current state to distinguish OVERHEAT recovery.
+ * @brief Maps the active temperature into a discrete event for the FSM.
  */
-static AppEvent_t App_ClassifyTemperature(sint32 temp_x10)
+static AppEvent_t App_ClassifyTemperature(sint32 currentTempX10)
 {
     AppEvent_t event;
 
-    if (temp_x10 >= APP_THRESH_40_X10)
+    if (currentTempX10 >= APP_THRESH_40_X10)
     {
         event = APP_EVENT_TEMP_ABOVE_40;
     }
-    else if (currentState == APP_STATE_OVERHEAT)
+    else if (ActiveState == APP_STATE_OVERHEAT)
     {
-        /* Temperature dropped below 40 — recovery event */
+        // System is cooling down from an overheat scenario
         event = APP_EVENT_TEMP_BELOW_40_RECOVERY;
     }
-    else if (temp_x10 >= APP_THRESH_35_X10)
+    else if (currentTempX10 >= APP_THRESH_35_X10)
     {
         event = APP_EVENT_TEMP_35_TO_40;
     }
-    else if (temp_x10 >= APP_THRESH_30_X10)
+    else if (currentTempX10 >= APP_THRESH_30_X10)
     {
         event = APP_EVENT_TEMP_30_TO_35;
     }
-    else if (temp_x10 >= APP_THRESH_25_X10)
+    else if (currentTempX10 >= APP_THRESH_25_X10)
     {
         event = APP_EVENT_TEMP_25_TO_30;
     }
@@ -235,46 +211,42 @@ static AppEvent_t App_ClassifyTemperature(sint32 temp_x10)
 }
 
 /**
- * @brief  Apply hardware outputs: fan duty, alarm LED, and LCD update.
- *         Called by each state handler after computing the next state.
- * @param  state    The state determining the LCD line 2 format.
- * @param  event    Current temperature event (determines fan duty).
- * @param  temp_x10 Temperature × 10 for display.
+ * @brief Synchronizes the Fan, LED, and LCD to match the active state and event.
  */
-static void App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 temp_x10)
+static void App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 currentTempX10)
 {
-    uint8 fanDuty;
+    uint8 targetDuty;
 
-    /* --- Determine fan duty from event --- */
+    // Calculate required fan effort based on the thermal event
     switch (event)
     {
         case APP_EVENT_TEMP_BELOW_25:
-            fanDuty = APP_FAN_DUTY_OFF;
+            targetDuty = APP_FAN_DUTY_OFF;
             break;
 
         case APP_EVENT_TEMP_25_TO_30:
-            fanDuty = APP_FAN_DUTY_LOW;
+            targetDuty = APP_FAN_DUTY_LOW;
             break;
 
         case APP_EVENT_TEMP_30_TO_35:
-            fanDuty = APP_FAN_DUTY_MED;
+            targetDuty = APP_FAN_DUTY_MED;
             break;
 
         case APP_EVENT_TEMP_35_TO_40:
         case APP_EVENT_TEMP_ABOVE_40:
         case APP_EVENT_TEMP_BELOW_40_RECOVERY:
-            fanDuty = APP_FAN_DUTY_FULL;
+            targetDuty = APP_FAN_DUTY_FULL;
             break;
 
         default:
-            fanDuty = APP_FAN_DUTY_OFF;
+            targetDuty = APP_FAN_DUTY_OFF;
             break;
     }
 
-    /* --- Set PWM duty cycle --- */
-    Pwm_SetDutyPercent(APP_FAN_TIMER_ID, APP_FAN_CHANNEL, fanDuty);
+    // Apply speed
+    Pwm_SetDutyPercent(APP_FAN_TIMER_ID, APP_FAN_CHANNEL, targetDuty);
 
-    /* --- Alarm LED --- */
+    // Manage visual warning indicator
     if (state == APP_STATE_OVERHEAT)
     {
         Gpio_WritePin(APP_ALARM_LED_PORT, APP_ALARM_LED_PIN, HIGH);
@@ -284,13 +256,13 @@ static void App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 temp_x1
         Gpio_WritePin(APP_ALARM_LED_PORT, APP_ALARM_LED_PIN, LOW);
     }
 
-    /* --- LCD Line 1: Temperature --- */
+    // Refresh UI - Line 1
     Lcd_SetCursor(0U, 0U);
     Lcd_Print("Temp:");
-    Lcd_PrintTemp(temp_x10);
+    Lcd_PrintTemp(currentTempX10);
     Lcd_Print(" C  ");
 
-    /* --- LCD Line 2: Fan speed or OVERHEAT warning --- */
+    // Refresh UI - Line 2
     Lcd_SetCursor(1U, 0U);
 
     if (state == APP_STATE_OVERHEAT)
@@ -300,81 +272,38 @@ static void App_UpdateOutputs(AppState_t state, AppEvent_t event, sint32 temp_x1
     else
     {
         Lcd_Print("Fan:");
-        Lcd_PrintInt((sint32)fanDuty, 3);
+        Lcd_PrintInt((sint32)targetDuty, 3);
         Lcd_Print("%           ");
     }
 }
 
 /**
- * @brief  Handle events while in IDLE state.
+ * @brief Executes logic when the system is resting below 25C.
  */
-static void App_HandleIdle(AppEvent_t event, sint32 temp_x10)
+static void App_HandleIdle(AppEvent_t event, sint32 currentTempX10)
 {
     switch (event)
     {
         case APP_EVENT_TEMP_BELOW_25:
-            /* Stay IDLE, fan OFF */
-            currentState = APP_STATE_IDLE;
-            App_UpdateOutputs(APP_STATE_IDLE, event, temp_x10);
+            ActiveState = APP_STATE_IDLE;
+            App_UpdateOutputs(APP_STATE_IDLE, event, currentTempX10);
             break;
 
         case APP_EVENT_TEMP_25_TO_30:
         case APP_EVENT_TEMP_30_TO_35:
         case APP_EVENT_TEMP_35_TO_40:
-            /* Transition to COOLING */
-            currentState = APP_STATE_COOLING;
-            App_UpdateOutputs(APP_STATE_COOLING, event, temp_x10);
+            ActiveState = APP_STATE_COOLING;
+            App_UpdateOutputs(APP_STATE_COOLING, event, currentTempX10);
             break;
 
         case APP_EVENT_TEMP_ABOVE_40:
-            /* Jump directly to OVERHEAT */
-            currentState = APP_STATE_OVERHEAT;
-            App_UpdateOutputs(APP_STATE_OVERHEAT, event, temp_x10);
+            ActiveState = APP_STATE_OVERHEAT;
+            App_UpdateOutputs(APP_STATE_OVERHEAT, event, currentTempX10);
             break;
 
         case APP_EVENT_TEMP_BELOW_40_RECOVERY:
-            /* Should not occur in IDLE, but handle gracefully */
-            currentState = APP_STATE_IDLE;
-            App_UpdateOutputs(APP_STATE_IDLE, APP_EVENT_TEMP_BELOW_25, temp_x10);
-            break;
-
-        default:
-            /* Unreachable — defensive default */
-            break;
-    }
-}
-
-/**
- * @brief  Handle events while in COOLING state.
- */
-static void App_HandleCooling(AppEvent_t event, sint32 temp_x10)
-{
-    switch (event)
-    {
-        case APP_EVENT_TEMP_BELOW_25:
-            /* Temperature safe — return to IDLE, fan OFF */
-            currentState = APP_STATE_IDLE;
-            App_UpdateOutputs(APP_STATE_IDLE, event, temp_x10);
-            break;
-
-        case APP_EVENT_TEMP_25_TO_30:
-        case APP_EVENT_TEMP_30_TO_35:
-        case APP_EVENT_TEMP_35_TO_40:
-            /* Stay in COOLING, adjust fan duty */
-            currentState = APP_STATE_COOLING;
-            App_UpdateOutputs(APP_STATE_COOLING, event, temp_x10);
-            break;
-
-        case APP_EVENT_TEMP_ABOVE_40:
-            /* Overheat — assert alarm */
-            currentState = APP_STATE_OVERHEAT;
-            App_UpdateOutputs(APP_STATE_OVERHEAT, event, temp_x10);
-            break;
-
-        case APP_EVENT_TEMP_BELOW_40_RECOVERY:
-            /* Should not occur in COOLING, treat as below-35 */
-            currentState = APP_STATE_COOLING;
-            App_UpdateOutputs(APP_STATE_COOLING, APP_EVENT_TEMP_35_TO_40, temp_x10);
+            ActiveState = APP_STATE_IDLE;
+            App_UpdateOutputs(APP_STATE_IDLE, APP_EVENT_TEMP_BELOW_25, currentTempX10);
             break;
 
         default:
@@ -383,50 +312,82 @@ static void App_HandleCooling(AppEvent_t event, sint32 temp_x10)
 }
 
 /**
- * @brief  Handle events while in OVERHEAT state.
+ * @brief Executes logic when active cooling measures are engaged.
  */
-static void App_HandleOverheat(AppEvent_t event, sint32 temp_x10)
+static void App_HandleCooling(AppEvent_t event, sint32 currentTempX10)
+{
+    switch (event)
+    {
+        case APP_EVENT_TEMP_BELOW_25:
+            ActiveState = APP_STATE_IDLE;
+            App_UpdateOutputs(APP_STATE_IDLE, event, currentTempX10);
+            break;
+
+        case APP_EVENT_TEMP_25_TO_30:
+        case APP_EVENT_TEMP_30_TO_35:
+        case APP_EVENT_TEMP_35_TO_40:
+            ActiveState = APP_STATE_COOLING;
+            App_UpdateOutputs(APP_STATE_COOLING, event, currentTempX10);
+            break;
+
+        case APP_EVENT_TEMP_ABOVE_40:
+            ActiveState = APP_STATE_OVERHEAT;
+            App_UpdateOutputs(APP_STATE_OVERHEAT, event, currentTempX10);
+            break;
+
+        case APP_EVENT_TEMP_BELOW_40_RECOVERY:
+            ActiveState = APP_STATE_COOLING;
+            App_UpdateOutputs(APP_STATE_COOLING, APP_EVENT_TEMP_35_TO_40, currentTempX10);
+            break;
+
+        default:
+            break;
+    }
+}
+
+/**
+ * @brief Executes lockdown/alarm logic during critical temperatures.
+ */
+static void App_HandleOverheat(AppEvent_t event, sint32 currentTempX10)
 {
     switch (event)
     {
         case APP_EVENT_TEMP_ABOVE_40:
-            /* Still overheating — maintain full fan and alarm */
-            currentState = APP_STATE_OVERHEAT;
-            App_UpdateOutputs(APP_STATE_OVERHEAT, event, temp_x10);
+            ActiveState = APP_STATE_OVERHEAT;
+            App_UpdateOutputs(APP_STATE_OVERHEAT, event, currentTempX10);
             break;
 
         case APP_EVENT_TEMP_BELOW_40_RECOVERY:
-            /* Temperature recovered below 40 °C — clear alarm, resume COOLING */
-            currentState = APP_STATE_COOLING;
-            /* Re-classify event properly for the cooling range */
+            ActiveState = APP_STATE_COOLING;
+
+            // Re-evaluate the specific cooling bracket we dropped into
             {
-                AppEvent_t recoveryEvent;
+                AppEvent_t recoveryTarget;
 
-                if (temp_x10 >= APP_THRESH_35_X10)
+                if (currentTempX10 >= APP_THRESH_35_X10)
                 {
-                    recoveryEvent = APP_EVENT_TEMP_35_TO_40;
+                    recoveryTarget = APP_EVENT_TEMP_35_TO_40;
                 }
-                else if (temp_x10 >= APP_THRESH_30_X10)
+                else if (currentTempX10 >= APP_THRESH_30_X10)
                 {
-                    recoveryEvent = APP_EVENT_TEMP_30_TO_35;
+                    recoveryTarget = APP_EVENT_TEMP_30_TO_35;
                 }
-                else if (temp_x10 >= APP_THRESH_25_X10)
+                else if (currentTempX10 >= APP_THRESH_25_X10)
                 {
-                    recoveryEvent = APP_EVENT_TEMP_25_TO_30;
+                    recoveryTarget = APP_EVENT_TEMP_25_TO_30;
                 }
                 else
                 {
-                    recoveryEvent = APP_EVENT_TEMP_BELOW_25;
+                    recoveryTarget = APP_EVENT_TEMP_BELOW_25;
                 }
 
-                App_UpdateOutputs(APP_STATE_COOLING, recoveryEvent, temp_x10);
+                App_UpdateOutputs(APP_STATE_COOLING, recoveryTarget, currentTempX10);
             }
             break;
 
         default:
-            /* Any other below-40 event should not reach here, but handle safely */
-            currentState = APP_STATE_COOLING;
-            App_UpdateOutputs(APP_STATE_COOLING, event, temp_x10);
+            ActiveState = APP_STATE_COOLING;
+            App_UpdateOutputs(APP_STATE_COOLING, event, currentTempX10);
             break;
     }
 }

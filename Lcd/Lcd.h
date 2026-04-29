@@ -1,93 +1,104 @@
+/**
+ * @file    Lcd.h
+ * @brief   Header file for the LCD1602 Driver (4-bit Parallel Mode).
+ * @details
+ * This driver provides a high-level interface for the HD44780-based LCD1602.
+ * It is optimized for 4-bit communication to save GPIO pins on the STM32F401.
+ */
+
 #ifndef LCD_H
 #define LCD_H
 
 #include "Std_Types.h"
 
 /* =========================================================
- * Hardware Pin Mapping (GPIOB)
+ * Hardware Connection Mapping (GPIOB)
  * ========================================================= */
+ 
+// Control Pins
 #define LCD_RS_PORT     GPIO_B
-#define LCD_RS_PIN      (0U)    /**< PB0 — Register Select (0=Cmd, 1=Data) */
+#define LCD_RS_PIN      (0U)    // Register Select: 0 for Instruction, 1 for Data
 
 #define LCD_EN_PORT     GPIO_B
-#define LCD_EN_PIN      (1U)    /**< PB1 — Enable pulse                    */
+#define LCD_EN_PIN      (1U)    // Enable: Latches data on falling edge
 
+// Data Bus (4-bit Mode)
 #define LCD_D4_PORT     GPIO_B
-#define LCD_D4_PIN      (4U)    /**< PB4 — Data bit 4                      */
+#define LCD_D4_PIN      (4U)    
 
 #define LCD_D5_PORT     GPIO_B
-#define LCD_D5_PIN      (5U)    /**< PB5 — Data bit 5                      */
+#define LCD_D5_PIN      (5U)    
 
 #define LCD_D6_PORT     GPIO_B
-#define LCD_D6_PIN      (6U)    /**< PB6 — Data bit 6                      */
+#define LCD_D6_PIN      (6U)    
 
 #define LCD_D7_PORT     GPIO_B
-#define LCD_D7_PIN      (7U)    /**< PB7 — Data bit 7                      */
+#define LCD_D7_PIN      (7U)    
 
 /* =========================================================
- * LCD Command Constants
+ * LCD Controller Command Set (HD44780)
  * ========================================================= */
-#define LCD_CMD_CLEAR           (0x01U) /**< Clear display, return home    */
-#define LCD_CMD_RETURN_HOME     (0x02U) /**< Return cursor to home         */
-#define LCD_CMD_ENTRY_MODE      (0x06U) /**< Increment, no display shift   */
-#define LCD_CMD_DISPLAY_ON      (0x0CU) /**< Display ON, cursor OFF        */
-#define LCD_CMD_4BIT_2LINE      (0x28U) /**< 4-bit, 2 lines, 5×8 font     */
-#define LCD_DDRAM_ROW0          (0x00U) /**< DDRAM base address — row 0    */
-#define LCD_DDRAM_ROW1          (0x40U) /**< DDRAM base address — row 1    */
-#define LCD_SET_DDRAM_CMD       (0x80U) /**< OR with address to set DDRAM  */
+#define LCD_CMD_CLEAR           (0x01U) // Wipes display and resets cursor
+#define LCD_CMD_RETURN_HOME     (0x02U) // Returns cursor to (0,0) without clearing
+#define LCD_CMD_ENTRY_MODE      (0x06U) // Sets cursor direction to right
+#define LCD_CMD_DISPLAY_ON      (0x0CU) // Turns on pixels, hides cursor and blink
+#define LCD_CMD_4BIT_2LINE      (0x28U) // Configures 4-bit bus, 2-line display, 5x8 dots
+#define LCD_DDRAM_ROW0          (0x00U) // Memory address start for Line 1
+#define LCD_DDRAM_ROW1          (0x40U) // Memory address start for Line 2
+#define LCD_SET_DDRAM_CMD       (0x80U) // Base command for setting DDRAM address
 
 /* =========================================================
- * Public API
+ * Driver Public Interface
  * ========================================================= */
 
 /**
- * @brief  Initialise LCD1602 in 4-bit mode following HD44780 power-on sequence.
- *         Uses delay_ms() — safe before the timer driver is started.
+ * @brief  Initializes the LCD hardware using the 4-bit startup sequence.
+ * Includes the necessary power-up delays for the HD44780 controller.
  */
 void Lcd_Init(void);
 
 /**
- * @brief  Send a command byte to the LCD controller.
- * @param  cmd  HD44780 command byte.
+ * @brief  Sends a low-level instruction command to the LCD.
+ * @param  cmd The 8-bit command hex value.
  */
 void Lcd_SendCommand(uint8 cmd);
 
 /**
- * @brief  Send a data (character) byte to the LCD controller.
- * @param  data  ASCII character to display.
+ * @brief  Sends a single ASCII character to be displayed.
+ * @param  data The ASCII value to write to DDRAM.
  */
 void Lcd_SendData(uint8 data);
 
 /**
- * @brief  Clear the display and wait for completion.
+ * @brief  Clears all text from the screen and resets the cursor.
  */
 void Lcd_Clear(void);
 
 /**
- * @brief  Move cursor to the specified row and column.
- * @param  row  0 = first line, 1 = second line.
- * @param  col  Column position [0..15].
+ * @brief  Positions the cursor at a specific line and column.
+ * @param  row Line index (0 for Top, 1 for Bottom).
+ * @param  col Column index (0 to 15).
  */
 void Lcd_SetCursor(uint8 row, uint8 col);
 
 /**
- * @brief  Print a null-terminated ASCII string starting at the current cursor.
- * @param  str  Pointer to string.
+ * @brief  Displays a full string starting from the current cursor position.
+ * @param  str Pointer to the null-terminated character array.
  */
 void Lcd_Print(const char *str);
 
 /**
- * @brief  Print a signed integer right-aligned within <width> characters.
- *         No sprintf — manual digit extraction used.
- * @param  value  Integer value to print.
- * @param  width  Total character width (pad with spaces on the left).
+ * @brief  Prints a signed integer value with alignment.
+ * Useful for displaying sensor readings without using 'sprintf'.
+ * @param  value The signed 32-bit integer to display.
+ * @param  width Total number of spaces on screen (right-aligned).
  */
 void Lcd_PrintInt(sint32 value, uint8 width);
 
 /**
- * @brief  Print temperature formatted as "XX.X" using integer arithmetic.
- *         Example: temp_x10 = 276 → prints "27.6".
- * @param  temp_x10  Temperature in tenths of °C.
+ * @brief  Converts and prints a temperature value scaled by 10.
+ * Useful for avoiding floating-point math overhead.
+ * @param  temp_x10 Temperature in Celsius * 10 (e.g., 25.5C = 255).
  */
 void Lcd_PrintTemp(sint32 temp_x10);
 

@@ -1,10 +1,10 @@
 /**
  * @file    Lcd.c
- * @brief   HD44780 LCD1602 driver in 4-bit parallel mode.
- *          Uses only the Gpio driver API — no HAL, no register writes in this file.
- *          Timing provided by delay_ms() from Utils.h.
- *
-
+ * @brief   Low-level driver for the LCD1602 (HD44780) in 4-bit mode.
+ * @details
+ * This driver communicates with the LCD using a 4-bit parallel interface.
+ * All timing is derived from the SysTick-based delay utility to ensure
+ * reliable command processing without blocking interrupts.
  */
 
 #include "Lcd.h"
@@ -13,66 +13,66 @@
 #include "Utils.h"
 
 /* =========================================================
- * Private function prototypes
+ * Private Function Prototypes
  * ========================================================= */
-static void Lcd_SendNibble(uint8 nibble);
-static void Lcd_SendByte(uint8 byte, uint8 isData);
+static void Lcd_WriteNibble(uint8 dataNibble);
+static void Lcd_WriteByte(uint8 dataVal, uint8 modeBit);
 
 /* =========================================================
- * Private helpers
+ * Low-Level Hardware Helpers
  * ========================================================= */
 
 /**
- * @brief  Drive D4–D7 with bits [3:0] of nibble and pulse the EN line.
- *         Bit 0 of nibble → D4, bit 1 → D5, bit 2 → D6, bit 3 → D7.
+ * @brief  Sends 4 bits of data to the LCD data lines and triggers the Enable pulse.
+ * @param  dataNibble The 4 bits to be sent (bits 0-3 mapped to D4-D7).
  */
-static void Lcd_SendNibble(uint8 nibble)
+static void Lcd_WriteNibble(uint8 dataNibble)
 {
-    /* --- Drive data pins from the lower 4 bits of nibble --- */
-    Gpio_WritePin(LCD_D4_PORT, LCD_D4_PIN, (uint8)((nibble >> 0U) & 0x01U));
-    Gpio_WritePin(LCD_D5_PORT, LCD_D5_PIN, (uint8)((nibble >> 1U) & 0x01U));
-    Gpio_WritePin(LCD_D6_PORT, LCD_D6_PIN, (uint8)((nibble >> 2U) & 0x01U));
-    Gpio_WritePin(LCD_D7_PORT, LCD_D7_PIN, (uint8)((nibble >> 3U) & 0x01U));
+    // Map individual bits of the nibble to the designated GPIO pins
+    Gpio_WritePin(LCD_D4_PORT, LCD_D4_PIN, (uint8)((dataNibble >> 0U) & 0x01U));
+    Gpio_WritePin(LCD_D5_PORT, LCD_D5_PIN, (uint8)((dataNibble >> 1U) & 0x01U));
+    Gpio_WritePin(LCD_D6_PORT, LCD_D6_PIN, (uint8)((dataNibble >> 2U) & 0x01U));
+    Gpio_WritePin(LCD_D7_PORT, LCD_D7_PIN, (uint8)((dataNibble >> 3U) & 0x01U));
 
-    /* --- Pulse EN: HIGH → short delay → LOW --- */
+    // Generate Enable Pulse: High-to-Low transition latches the data
     Gpio_WritePin(LCD_EN_PORT, LCD_EN_PIN, HIGH);
-    delay_ms(1U);   /* ≥ 1 µs required; 1 ms is conservative but safe */
+    delay_ms(1U);   // Conservative delay to satisfy LCD cycle time
     Gpio_WritePin(LCD_EN_PORT, LCD_EN_PIN, LOW);
 }
 
 /**
- * @brief  Send a full byte to the LCD as two 4-bit nibbles.
- *         Sets RS based on isData, then sends upper nibble then lower nibble.
- * @param  byte    8-bit data or command value.
- * @param  isData  1 = data (RS=HIGH), 0 = command (RS=LOW).
+ * @brief  Transmits a full 8-bit byte as two consecutive 4-bit nibbles.
+ * @param  dataVal  The 8-bit command or character data.
+ * @param  modeBit  Selects Register (0 for Command, 1 for Data).
  */
-static void Lcd_SendByte(uint8 byte, uint8 isData)
+static void Lcd_WriteByte(uint8 dataVal, uint8 modeBit)
 {
-    Gpio_WritePin(LCD_RS_PORT, LCD_RS_PIN, isData);
+    // Set Register Select (RS) pin according to mode
+    Gpio_WritePin(LCD_RS_PORT, LCD_RS_PIN, modeBit);
 
-    /* Send upper nibble first */
-    Lcd_SendNibble((uint8)(byte >> 4U));
+    // Transmit Upper Nibble (Most Significant)
+    Lcd_WriteNibble((uint8)(dataVal >> 4U));
 
-    /* Send lower nibble */
-    Lcd_SendNibble((uint8)(byte & 0x0FU));
+    // Transmit Lower Nibble (Least Significant)
+    Lcd_WriteNibble((uint8)(dataVal & 0x0FU));
 
-    /* Wait for LCD to process the command (≥ 37 µs; 1 ms is safe) */
+    // Execution time for standard commands
     delay_ms(1U);
 }
 
 /* =========================================================
- * Public API
+ * Public Driver Interface
  * ========================================================= */
 
 /**
- * @brief  Initialise LCD1602 in 4-bit mode using the HD44780 power-up sequence.
+ * @brief  Executes the mandatory hardware initialization sequence for 4-bit mode.
  */
 void Lcd_Init(void)
 {
-    /* Enable GPIOB clock (RCC_GPIOB enabled by main, but safe to call again) */
+    // Ensure the bus clock for GPIOB is active
     Rcc_Enable(RCC_GPIOB);
 
-    /* Initialise all LCD GPIO pins as push-pull outputs, defaulting LOW */
+    // Setup control and data pins as Push-Pull Outputs
     Gpio_Init(LCD_RS_PORT, LCD_RS_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
     Gpio_Init(LCD_EN_PORT, LCD_EN_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
     Gpio_Init(LCD_D4_PORT, LCD_D4_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
@@ -80,186 +80,168 @@ void Lcd_Init(void)
     Gpio_Init(LCD_D6_PORT, LCD_D6_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
     Gpio_Init(LCD_D7_PORT, LCD_D7_PIN, GPIO_OUTPUT, GPIO_PUSH_PULL);
 
-    /* Ensure EN and RS start LOW */
+    // Initial hardware reset of control lines
     Gpio_WritePin(LCD_EN_PORT, LCD_EN_PIN, LOW);
     Gpio_WritePin(LCD_RS_PORT, LCD_RS_PIN, LOW);
 
-    /* ---- HD44780 4-bit initialisation sequence ---- */
+    // --- HD44780 Power-On Wakeup Sequence ---
+    delay_ms(20); // Wait for VDD to stabilize
 
-    /* Step 1: Wait ≥ 15 ms after VDD rises above 4.5 V (or 2.7 V for 3 V LCD) */
-    delay_ms(15U);
+    Lcd_WriteNibble(0x03);
+    delay_ms(5);
 
-    /* Step 2: Send 0x3 nibble, wait ≥ 4.1 ms */
-    Lcd_SendNibble(0x3U);
-    delay_ms(5U);
+    Lcd_WriteNibble(0x03);
+    delay_ms(1);
 
-    /* Step 3: Send 0x3 nibble again, wait ≥ 100 µs */
-    Lcd_SendNibble(0x3U);
-    delay_ms(1U);
+    Lcd_WriteNibble(0x03);
+    delay_ms(1);
 
-    /* Step 4: Send 0x3 nibble a third time */
-    Lcd_SendNibble(0x3U);
-    delay_ms(1U);
+    // Activate 4-Bit Mode
+    Lcd_WriteNibble(0x02);
+    delay_ms(1);
 
-    /* Step 5: Switch to 4-bit mode */
-    Lcd_SendNibble(0x2U);
-    delay_ms(1U);
-
-    /* Step 6: Function set — 4-bit bus, 2 display lines, 5×8 font */
+    // Configure Display: 2-Lines, 5x8 Dots
     Lcd_SendCommand(LCD_CMD_4BIT_2LINE);
 
-    /* Step 7: Display ON, cursor OFF, blink OFF */
+    // Turn Display ON, hide cursor/blink
     Lcd_SendCommand(LCD_CMD_DISPLAY_ON);
 
-    /* Step 8: Entry mode — increment cursor, no display shift */
+    // Auto-increment cursor position
     Lcd_SendCommand(LCD_CMD_ENTRY_MODE);
 
-    /* Step 9: Clear display */
-    Lcd_SendCommand(LCD_CMD_CLEAR);
-    delay_ms(2U);   /* clear command needs ≥ 1.52 ms */
+    // Clear Screen
+    Lcd_Clear();
 }
 
 /**
- * @brief  Send a command byte to the LCD.
+ * @brief  Sends a configuration command to the LCD controller.
  */
 void Lcd_SendCommand(uint8 cmd)
 {
-    Lcd_SendByte(cmd, 0U);  /* RS = LOW for commands */
+    Lcd_WriteByte(cmd, 0U);
 }
 
 /**
- * @brief  Send a character data byte to the LCD.
+ * @brief  Writes a single ASCII character to the current cursor position.
  */
 void Lcd_SendData(uint8 data)
 {
-    Lcd_SendByte(data, 1U); /* RS = HIGH for data */
+    Lcd_WriteByte(data, 1U);
 }
 
 /**
- * @brief  Clear the display and wait the required time.
+ * @brief  Wipes the display memory and resets the cursor to (0,0).
  */
 void Lcd_Clear(void)
 {
     Lcd_SendCommand(LCD_CMD_CLEAR);
-    delay_ms(2U);
+    delay_ms(2U); // Clearing requires extra time to process (min 1.52ms)
 }
 
 /**
- * @brief  Set cursor position by driving the DDRAM address.
+ * @brief  Moves the cursor to a specific coordinate on the 16x2 grid.
  */
 void Lcd_SetCursor(uint8 row, uint8 col)
 {
-    uint8 ddramAddr;
+    uint8 targetAddress;
 
     if (row == 0U)
     {
-        ddramAddr = LCD_DDRAM_ROW0 + col;
+        targetAddress = LCD_DDRAM_ROW0 + col;
     }
     else
     {
-        ddramAddr = LCD_DDRAM_ROW1 + col;
+        targetAddress = LCD_DDRAM_ROW1 + col;
     }
 
-    Lcd_SendCommand((uint8)(LCD_SET_DDRAM_CMD | ddramAddr));
+    Lcd_SendCommand((uint8)(LCD_SET_DDRAM_CMD | targetAddress));
 }
 
 /**
- * @brief  Print a null-terminated string at the current cursor position.
+ * @brief  Prints a string of characters sequentially.
  */
 void Lcd_Print(const char *str)
 {
-    uint8 idx = 0U;
+    uint32 i = 0U;
 
-    while (str[idx] != '\0')
+    while (str[i] != '\0')
     {
-        Lcd_SendData((uint8)str[idx]);
-        idx++;
+        Lcd_SendData((uint8)str[i]);
+        i++;
     }
 }
 
 /**
- * @brief  Print a signed integer right-aligned in <width> characters.
- *         Handles negative values and pads with spaces on the left.
+ * @brief  Helper to display integers with optional padding for alignment.
  */
 void Lcd_PrintInt(sint32 value, uint8 width)
 {
-    /* Local buffer: max sint32 has 10 digits + sign + null = 12 chars */
-    uint8  buf[12U];
-    uint8  pos    = 11U;
-    uint8  isNeg  = 0U;
-    sint32 absVal = value;
-    uint8  numLen;
-    sint32 padCount;
-    sint32 i;
+    uint8  digitBuffer[12U];
+    uint8  charPos    = 11U;
+    uint8  isNegative  = 0U;
+    sint32 magnitude = value;
 
-    buf[pos] = '\0';
+    digitBuffer[charPos] = '\0';
 
     if (value < 0)
     {
-        isNeg  = 1U;
-        absVal = -value;
+        isNegative = 1U;
+        magnitude  = -value;
     }
 
-    /* Extract digits from least significant to most significant */
-    if (absVal == 0)
+    // Convert integer to string in reverse
+    if (magnitude == 0)
     {
-        pos--;
-        buf[pos] = '0';
+        charPos--;
+        digitBuffer[charPos] = '0';
     }
     else
     {
-        while (absVal > 0)
+        while (magnitude > 0)
         {
-            pos--;
-            buf[pos] = (uint8)('0' + (absVal % 10));
-            absVal /= 10;
+            charPos--;
+            digitBuffer[charPos] = (uint8)('0' + (magnitude % 10));
+            magnitude /= 10;
         }
     }
 
-    if (isNeg)
+    if (isNegative)
     {
-        pos--;
-        buf[pos] = '-';
+        charPos--;
+        digitBuffer[charPos] = '-';
     }
 
-    /* Calculate actual number length (11 - pos, since null is at index 11) */
-    numLen   = (uint8)(11U - pos);
-    padCount = (sint32)width - (sint32)numLen;
+    // Handle right-alignment padding
+    uint8 actualLen = (uint8)(11U - charPos);
+    sint32 spacePadding = (sint32)width - (sint32)actualLen;
 
-    /* Print leading spaces for right-alignment */
-    for (i = 0; i < padCount; i++)
+    for (sint32 p = 0; p < spacePadding; p++)
     {
         Lcd_SendData((uint8)' ');
     }
 
-    /* Print the number string */
-    Lcd_Print((const char *)&buf[pos]);
+    Lcd_Print((const char *)&digitBuffer[charPos]);
 }
 
 /**
- * @brief  Print temperature in format "XX.X" using integer math.
- *         Example: temp_x10 = 276 → displays "27.6".
+ * @brief  Specialized printer for temperature values scaled by 10.
+ * Displays '276' as "27.6".
  */
 void Lcd_PrintTemp(sint32 temp_x10)
 {
-    sint32 intPart;
-    sint32 decPart;
+    sint32 wholeUnits;
+    sint32 fractionalUnits;
 
-    intPart = temp_x10 / 10;
-    decPart = temp_x10 % 10;
+    wholeUnits      = temp_x10 / 10;
+    fractionalUnits = temp_x10 % 10;
 
-    /* Ensure decimal part is positive (handles edge case of negative temps) */
-    if (decPart < 0)
+    if (fractionalUnits < 0)
     {
-        decPart = -decPart;
+        fractionalUnits = -fractionalUnits;
     }
 
-    /* Print integer part (no leading spaces — use exact digits) */
-    Lcd_PrintInt(intPart, 2U);
-
-    /* Print decimal separator */
+    // Display the whole number followed by the precision digit
+    Lcd_PrintInt(wholeUnits, 2U);
     Lcd_SendData((uint8)'.');
-
-    /* Print single decimal digit */
-    Lcd_SendData((uint8)('0' + (uint8)decPart));
+    Lcd_SendData((uint8)('0' + (uint8)fractionalUnits));
 }
