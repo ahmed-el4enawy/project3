@@ -3,18 +3,18 @@ set(INCLUDE_LIST ${INCLUDE_LIST}
         ${PROJECT_PATH}/STM32-base/startup
         ${PROJECT_PATH}/STM32-base-STM32Cube/CMSIS/ARM/inc
         ${PROJECT_PATH}/STM32-base-STM32Cube/CMSIS/${SERIES_FOLDER}/inc
-
-        # --- Component-Based Architecture Includes ---
+        ${PROJECT_PATH}/include
         ${PROJECT_PATH}/Lib
-        ${PROJECT_PATH}/Rcc
+        ${PROJECT_PATH}/RCC
         ${PROJECT_PATH}/Gpio
-        ${PROJECT_PATH}/SysTick
+        ${PROJECT_PATH}/SevenSeg
+        ${PROJECT_PATH}/Exti
         ${PROJECT_PATH}/Timer
-        ${PROJECT_PATH}/Dma
+        ${PROJECT_PATH}/Pwm
+        ${PROJECT_PATH}/Nvic
         ${PROJECT_PATH}/Adc
         ${PROJECT_PATH}/Lcd
-        ${PROJECT_PATH}/Led
-        ${PROJECT_PATH}/Fsm
+        ${PROJECT_PATH}/App
 )
 
 if (USE_HAL)
