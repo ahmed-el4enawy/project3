@@ -166,4 +166,3 @@ void TIM4_IRQHandler(void) {
 void TIM5_IRQHandler(void) {
     Timer_HandleIrq(3);
 }
- 

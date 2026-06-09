@@ -244,4 +244,4 @@ void Lcd_PrintTemp(sint32 temp_x10)
     Lcd_PrintInt(wholeUnits, 2U);
     Lcd_SendData((uint8)'.');
     Lcd_SendData((uint8)('0' + (uint8)fractionalUnits));
-} 
+}
