@@ -307,4 +307,4 @@ static void App_HandleOverheat(AppEvent_t event, sint32 currentTempX10)
             App_UpdateOutputs(APP_STATE_COOLING, event, currentTempX10);
             break;
     }
-} 
+}
