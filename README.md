@@ -1,70 +1,77 @@
 # Auto-Cooler Temperature Control System
 
-A bare-metal closed-loop temperature control system implemented on the STM32F401xE microcontroller. The system monitors ambient temperature using an LM35 sensor, adjusts a DC fan speed via PWM, and provides real-time feedback on an LCD1602 display.
+A professional, bare-metal closed-loop temperature control system implemented on the STM32F401xE microcontroller. Developed for **Project 3: Medical Equipment II**, this system monitors ambient temperature using an LM35 sensor, dynamically adjusts DC fan speed via PWM, and provides real-time operational feedback on an LCD1602 display.
 
-## Project Description
+**Developed by Team 27:** Ahmed Salah Geoshy Elshenawy & Ahmed Ahmed Mokhtar
 
-This system uses a Mealy State Machine to govern its behavior. It continuously samples temperature and transitions between IDLE, COOLING, and OVERHEAT states. The implementation avoids polling loops for timing-sensitive operations by using DMA for sensor data acquisition and hardware timers for PWM generation.
+## System Architecture & Description
 
-## Key Features
+This system is governed by an event-driven **Mealy Finite State Machine (FSM)**. It continuously samples thermal data and seamlessly transitions between `IDLE`, `COOLING`, and `OVERHEAT` states.
 
-- ADC with DMA: Uses ADC1 and DMA2 Stream 0 for continuous, non-blocking sampling of the LM35 sensor.
-- PWM Control: Uses TIM3 Channel 1 to generate a 1 kHz PWM signal for DC fan speed control.
-- LCD1602 Driver: Custom 4-bit parallel driver for character display without external libraries.
-- Mealy State Machine: Explicit state-based logic where outputs depend on both the current state and the temperature input.
-- Safety Alarm: Visual overheat indicator using a dedicated LED.
+To meet strict real-time medical equipment standards, the application completely eliminates polling and busy-wait loops. It relies on an **asynchronous, interrupt-driven ADC** for sensor acquisition, allowing the CPU to remain unblocked. FSM transitions are executed in O(1) time complexity using a highly efficient function-pointer dispatch table.
 
-## Hardware Pinout
+## Key Engineering Features
 
-| Peripheral | Pin | Description |
+- **Asynchronous ADC:** Utilizes hardware interrupts via `ADC1` for continuous, non-blocking sampling of the LM35 sensor, dropping the heavy overhead of DMA while maintaining autonomous execution.
+- **High-Frequency PWM Control:** Configures `TIM3 Channel 1` to generate a smooth **10 kHz PWM signal**, ensuring silent and efficient DC motor operation without acoustic noise.
+- **Hardware Abstraction Layer (HAL):** All pinout mappings and thermal policies are heavily decoupled from logic and isolated in a central Master Configuration Panel (`Lib/App_Config.h`).
+- **Conflict-Free LCD Driver:** Custom 4-bit parallel driver mapped to the "High Pins" of `PORTB` to completely avoid hardware conflicts with the STM32 `BOOT1` state and `SWD` debugger lines.
+- **Mealy Dispatch Table:** Explicit state-based logic mapping where dynamic outputs (Fan Speed, LED, LCD text) instantly respond to combined state-event vectors.
+
+## Hardware Pinout (Team 27 Configuration)
+
+*Note: This specific layout routes the LCD data bus safely away from system debug pins.*
+
+| Peripheral / Signal | STM32 Pin | Description / Notes |
 | :--- | :--- | :--- |
-| LM35 Sensor | PA0 | Analog Input (ADC1 Channel 0) |
-| Alarm LED | PA5 | Digital Output (Active High) |
-| DC Fan | PA6 | PWM Output (TIM3 Channel 1) |
-| LCD RS | PB0 | Register Select |
-| LCD EN | PB1 | Enable Signal |
-| LCD D4-D7 | PB2-PB5 | Data Bits (4-bit mode) |
+| **LM35 Analog Temp**| **PA1** | `ADC1_IN1` (Floating Input) |
+| **DC Fan Control** | **PA6** | `TIM3_CH1` (Alternate Function 2 - PWM) |
+| **Overheat Alarm** | **PD14**| Digital Output (Active High via 330Ω Resistor)|
+| **LCD RS** | **PB8** | Register Select |
+| **LCD EN** | **PB9** | Enable Latch |
+| **LCD D4 - D7** | **PB12-PB15**| 4-bit Data Bus (Push-Pull Output) |
 
-## Temperature Logic
+## Thermal Control Logic
 
-- T < 25.0 C: Fan OFF (IDLE)
-- 25.0 <= T < 30.0 C: Fan 33% (COOLING)
-- 30.0 <= T < 35.0 C: Fan 66% (COOLING)
-- T >= 35.0 C: Fan 100% (COOLING)
-- T >= 40.0 C: OVERHEAT Warning and Alarm LED ON (OVERHEAT)
+The Mealy FSM applies the following operational hysteresis and performance scaling:
+
+- **T < 25.0 °C:** Fan 0% (`IDLE`)
+- **25.0 ≤ T < 30.0 °C:** Fan 33% (`COOLING`)
+- **30.0 ≤ T < 35.0 °C:** Fan 66% (`COOLING`)
+- **35.0 ≤ T < 40.0 °C:** Fan 100% (`COOLING`)
+- **T ≥ 40.0 °C:** **!! OVERHEAT !!** System Lock, Fan 100%, Alarm LED ON (`OVERHEAT`)
+- *Recovery:* The system remains in `OVERHEAT` until the temperature explicitly drops below 40.0 °C.
 
 ## Build Instructions
 
 ### Prerequisites
-
-- ARM GNU Toolchain (arm-none-eabi-gcc)
+- ARM GNU Toolchain (`arm-none-eabi-gcc`)
 - CMake (3.30 or higher)
-- Ninja or Make build system
+- Ninja Build System
+- CLion IDE (Recommended)
 
-### Configuration
-
-Ensure the ARM toolchain path is correctly set in cmake/ArmToolchain.cmake:
-```cmake
-set(ARM_DIR "path/to/your/arm-none-eabi/toolchain")
-```
-
-### Compiling
+### Compiling via CMake
 
 1. Create and configure the build directory:
-   ```powershell
+   ```bash
    cmake -S . -B build -G Ninja
    ```
 
-2. Build the project:
-   ```powershell
+2. Compile the executable:
+   ```bash
    cmake --build build
    ```
 
-The build process generates stm32-template.hex, .bin, and .elf files in the build/ directory.
+The build process will generate the `.elf`, `.hex`, and `.bin` binaries inside the `build/` directory, ready to be flashed to the STM32F401xE or loaded into Proteus.
 
-## Project Structure
+## Modular Source Structure
 
-- include/: Header files for drivers (ADC, PWM, LCD, GPIO) and FSM logic.
-- src/: Source code implementation for all drivers and the main application loop.
-- cmake/: Build configuration and device-specific settings.
-- STM32-base/: CMSIS and startup files for the STM32F4 series.
+The repository is organized by strict Separation of Concerns (SoC):
+
+- `App/` - Core FSM logic, FSM Dispatch Tables, and the main initialization sequence.
+- `Lib/` - Master Hardware Configuration (`App_Config.h`), standard types, and utility delays.
+- `Adc/` - Interrupt-driven analog-to-digital converter peripheral driver.
+- `Pwm/` & `Timer/` - High-frequency signal generation for the actuator.
+- `Lcd/` - Raw HD44780 4-bit communication instructions.
+- `Rcc/` & `Gpio/` & `Nvic/` - Foundational low-level MCAL drivers.
+- `src/main.c` - Orchestrator and non-blocking superloop.
