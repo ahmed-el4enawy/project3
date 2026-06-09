@@ -59,4 +59,3 @@ void Rcc_Disable(uint8 PeripheralId) {
     }
 }
 
- 

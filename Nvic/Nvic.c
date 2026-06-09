@@ -24,4 +24,3 @@ void Nvic_EnableIrq(uint8 IrqNumber) {
 void Nvic_DisableIrq(uint8 IrqNumber) {
     NVIC->NVIC_ICER[IrqNumber / 32] |= (0x01 << (IrqNumber % 32));
 }
- 
