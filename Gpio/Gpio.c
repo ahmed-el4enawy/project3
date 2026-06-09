@@ -69,3 +69,4 @@ void Gpio_SetAF(uint8 PortName, uint8 PinNumber, uint8 AF) {
         gpioDevice->GPIO_AFRH |=  ((uint32)AF   << (pos * 4));
     }
 }
+ 
